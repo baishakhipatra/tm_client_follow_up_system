@@ -8,9 +8,7 @@
                 </div>
 
                 <div class="card-body">
-
                     <form wire:submit.prevent="login">
-
                         {{-- Email --}}
                         <div class="mb-3">
                             <label class="form-label">Email address</label>
@@ -53,10 +51,8 @@
                         </div>
 
                     </form>
-
                 </div>
             </div>
-
         </div>
     </div>
 </div>

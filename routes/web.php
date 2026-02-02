@@ -2,7 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Livewire\Auth\Login;
-use App\Livewire\{Dashboard, Clients, Projects};
+use App\Livewire\{Dashboard, Clients, Projects, Invoices};
 
 Route::get('/', function () {
     return redirect()->route('login');
@@ -17,10 +17,8 @@ Route::middleware('auth')->group(function () {
 
     Route::prefix('/admin')->group(function() {
          Route::get('/clients', Clients::class)->name('admin.clients.index');
-    });
-
-    Route::prefix('/admin')->group(function() {
          Route::get('/projects', Projects::class)->name('admin.projects.index');
+         Route::get('/invoices', Invoices::class)->name('admin.invoices.index');
     });
 
     Route::post('/logout', function () {

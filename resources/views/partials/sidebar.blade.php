@@ -27,8 +27,14 @@
                 <i class="bi bi-folder me-2"></i> Projects
             </a>
         </li>
-    </ul>
 
+        <li class="nav-item mb-2">
+            <a href="{{ route('admin.invoices.index') }}"
+            class="nav-link {{ request()->routeIs('admin.invoices.index') ? 'active' : '' }}">
+                <i class="bi bi-receipt me-2"></i> Invoices
+            </a>
+        </li>
+    </ul>
 
     <hr>
 
