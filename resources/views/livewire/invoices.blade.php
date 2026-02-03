@@ -12,7 +12,7 @@
                 style="width: 280px;"
             > --}}
             <button
-                wire:click="openModal"
+                wire:click="openInvoiceTypeModal"
                 class="btn btn-primary d-flex align-items-center gap-2">
                 <span class="fs-5">+</span> Add Invoice
             </button>
@@ -29,7 +29,8 @@
                             <th>Invoice Date</th>
                             <th>Due Date</th>
                             <th>Amount</th>
-                            <th>Pending Amount</th>
+                            <th>Received</th>
+                            <th>Pending</th>
                             <th>Status</th>
                             <th>Action</th>
                         </tr>
@@ -39,10 +40,11 @@
                         @forelse ($invoices as $invoice)
                             <tr wire:key="invoice-{{ $invoice->id }}">
                                 <td class="fw-medium">{{ strtoupper($invoice->invoice_number) }}<br>{{ ucwords($invoice->client->company_name ?? '') }}</td>
-                                <td>{{ ucwords($invoice->client->client_name) ?? '-' }}</td>
+                                <td>{{ ucwords($invoice->client->client_name) ?? '-' }}<br>{{ucwords($invoice->project->project_name)}}</td>
                                 <td>{{ $invoice->invoice_date ?? '-' }}</td>
                                 <td>{{ $invoice->due_date ?? '-' }}</td>
                                 <td>{{ $invoice->amount ?? '-' }}</td>
+                                <td>{{ $invoice->paid_amount }}</td>
                                 <td>{{ $invoice->pending_amount ?? '-' }}</td>
                                 <td>
                                     {{ ucwords(str_replace('_', ' ', $invoice->status)) }}
@@ -79,6 +81,58 @@
             </div>
         </div>
     </div>
+    @if($showInvoiceTypeModal)
+    <div wire:ignore.self class="modal fade show d-block" tabindex="-1"
+        style="background: rgba(0,0,0,.5)">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+
+                <div class="modal-header">
+                    <h5 class="modal-title">Select Invoice Type</h5>
+                    <button type="button" class="btn-close"
+                            wire:click="$set('showInvoiceTypeModal', false)"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input"
+                            type="radio"
+                            wire:model="invoice_type"
+                            value="tax"
+                            id="taxInvoice">
+                        <label class="form-check-label" for="taxInvoice">
+                            Tax Invoice
+                        </label>
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input"
+                            type="radio"
+                            wire:model="invoice_type"
+                            value="non_tax"
+                            id="nonTaxInvoice">
+                        <label class="form-check-label" for="nonTaxInvoice">
+                            Without Tax Invoice
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary"
+                            wire:click="$set('showInvoiceTypeModal', false)">
+                        Cancel
+                    </button>
+                    <button class="btn btn-primary"
+                            wire:click="proceedToInvoiceForm">
+                        Continue
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    @endif
+
     @if($showModal)
         <div wire:ignore.self class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
             <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -87,6 +141,9 @@
                     <div class="modal-header">
                         <h5 class="modal-title">
                             {{ $isEdit ? 'Edit Invoice' : 'Add New Invoice' }}
+                            <span class="badge bg-info ms-2">
+                                {{ $invoice_type === 'tax' ? 'Tax Invoice' : 'Without Tax' }}
+                            </span>
                         </h5>
                         <button type="button" class="btn-close" wire:click="closeModal"></button>
                     </div>
@@ -94,17 +151,23 @@
                     <div class="modal-body">
                         <div class="row g-3">
 
-                            {{-- Project Name --}}
                             <div class="col-md-6">
-                                <label class="form-label">Invoice Number <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control"
-                                    wire:model.defer="invoice_number">
-                                    @error('invoice_number')
-                                        <small class="text-danger">{{ $message }}</small>
-                                    @enderror
+                                <label class="form-label">
+                                    Invoice Number <span class="text-danger">*</span>
+                                </label>
+
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    wire:model.defer="invoice_number"
+                                    @if($invoice_type === 'non_tax') readonly @endif
+                                >
+
+                                @error('invoice_number')
+                                    <small class="text-danger">{{ $message }}</small>
+                                @enderror
                             </div>
 
-                            {{-- Project Code --}}
                             <div class="col-md-6">
                                 <label class="form-label">Amount</label>
                                 <input type="number" class="form-control"
@@ -114,7 +177,6 @@
                                     @enderror
                             </div>
 
-                            {{-- Client --}}
                             <div class="col-md-12">
                                 <label class="form-label">Projects <span class="text-danger">*</span></label>
                                 <select class="form-select" wire:model.defer="project_id">

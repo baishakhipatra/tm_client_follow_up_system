@@ -30,6 +30,9 @@
                             <th>Project</th>
                             <th>Client</th>
                             <th>Project Cost</th>
+                            <th>Invoiced</th>
+                            <th>Received</th>
+                            <th>Due</th>
                             <th>Duration</th>
                             <th>Action</th>
                         </tr>
@@ -38,13 +41,16 @@
                     <tbody>
                         @forelse ($projects as $project)
                             <tr wire:key="project-{{ $project->id }}">
-                                <td>{{ ucwords($project->project_name) }}<br>Code: {{ $project->project_code ?? '-' }}</td>
+                                <td>{{ ucwords($project->project_name) }}<br>Code: {{ strtoupper($project->project_code ?? '-') }}</td>
                                 <td>
                                     {{ ucwords(optional($project->client)->client_name ?? '-') }} <br>
                                     Company: {{ ucwords(optional($project->client)->company_name ?? '-') }}
                                 </td>
 
                                 <td>{{ $project->project_cost ?? '-' }}</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
                                 <td>Start-date: {{ $project->start_date ?? '-' }} <br> End-date: {{ $project->end_date ?? '-' }}</td>
                                 <td>
                                     <div class="d-flex gap-2">
@@ -130,6 +136,14 @@
                         </div>
 
                         <div class="col-md-6">
+                            <label class="form-label">Payment Received</label>
+                            <input type="number" step="0.01" class="form-control"
+                                wire:model.defer="payment_received">
+                            @error('payment_received') <span class="text-danger">{{ $message }}</span> @enderror
+                        </div>
+
+
+                        <div class="col-md-6">
                             <label class="form-label">Payment Terms</label>
                             <input type="text" class="form-control"
                                 placeholder="e.g. Net 30"
@@ -137,7 +151,7 @@
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label">Start Date <span class="text-danger">*</span></label>
+                            <label class="form-label">Start Date</label>
                             <input type="date" class="form-control"
                                 wire:model.defer="start_date">
                                 @error('start_date')
@@ -146,7 +160,7 @@
                         </div>
 
                         <div class="col-md-6">
-                            <label class="form-label">End Date <span class="text-danger">*</span></label>
+                            <label class="form-label">End Date</label>
                             <input type="date" class="form-control"
                                 wire:model.defer="end_date">
                                 @error('end_date')

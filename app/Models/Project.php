@@ -10,6 +10,7 @@ class Project extends Model
         'project_name',
         'client_id',
         'project_code',
+        'payment_received',
         'project_cost',
         'payment_terms',
         'start_date',

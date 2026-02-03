@@ -6,6 +6,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Invoice;
 use App\Models\Project;
+use Illuminate\Support\Facades\DB;
 
 class Invoices extends Component
 {
@@ -30,17 +31,30 @@ class Invoices extends Component
     public $payment_notes;
     public $selectedInvoice;
     public $paid_amount = 0;
+    public $showInvoiceTypeModal = false;
+    public $invoice_type = 'tax';
 
 
 
-    protected $rules = [
-        'invoice_number' => 'required|string|max:255',
-        'project_id'     => 'required',
-        'invoice_date'   => 'required|date',
-        'due_date'       => 'required|date|after_or_equal:invoice_date',
-        'amount'         => 'required|numeric|min:0',
-        'paid_amount' => 'nullable|numeric|min:0',
+    protected function rules()
+    {
+        return [
+            'invoice_number' => $this->invoice_type === 'tax'
+            ? 'required|string|max:255|unique:invoices,invoice_number,' . $this->invoiceId
+            : 'required|string|max:255',
+            'project_id'     => 'required',
+            'invoice_date'   => 'required|date',
+            'due_date'       => 'required|date|after_or_equal:invoice_date',
+            'amount'         => 'required|numeric|min:0',
+            'paid_amount'    => 'nullable|numeric|min:0',
+        ];
+    }
+
+
+    protected $messages = [
+        'invoice_number.unique' => 'Invoice number must be unique. This invoice number already exists.',
     ];
+
 
     public function render()
     {
@@ -53,8 +67,9 @@ class Invoices extends Component
 
     public function openModal()
     {
-        $this->reset();
         $this->resetValidation();
+
+        $this->invoiceId = null;
         $this->isEdit = false;
         $this->showModal = true;
     }
@@ -86,14 +101,16 @@ class Invoices extends Component
 
             $message = 'Invoice updated successfully';
         } else {
-            // CREATE
             Invoice::create([
                 'client_id' => $project->client_id,
+                'project_id' => $project->id,
+                'invoice_type' => $this->invoice_type,
                 'invoice_number' => $this->invoice_number,
                 'invoice_date' => $this->invoice_date,
                 'due_date' => $this->due_date,
                 'amount' => $this->amount,
-                'pending_amount' => $this->amount,
+                'paid_amount'     => 0,
+                'pending_amount'  => $project->project_cost - 0,
                 'status' => 'unpaid',
             ]);
 
@@ -131,7 +148,7 @@ class Invoices extends Component
 
         $this->selectedInvoice = $invoice;
         $this->payment_invoice_id = $invoice->id;
-         $this->payment_amount = $invoice->amount;
+        $this->payment_amount = $invoice->amount;
         $this->payment_date = now()->format('Y-m-d');
         $this->payment_method = null;
         $this->payment_notes = null;
@@ -139,6 +156,8 @@ class Invoices extends Component
         $this->resetValidation();
         $this->showPaymentModal = true;
     }
+
+
 
     public function storePayment()
     {
@@ -148,30 +167,70 @@ class Invoices extends Component
             'payment_date'       => 'required|date',
         ]);
 
-        $invoice = Invoice::with('client')->findOrFail($this->payment_invoice_id);
-        dd($invoice);
-        $project = Project::with('client')->findOrFail($invoice->project_id);
-        $totalPaid = Invoice::where('project_id', $project->id)
-            ->where('status', '!=', 'unpaid')
-            ->sum('amount');
-        $pending = max($project->total_cost - $totalPaid, 0);
+        $invoice = Invoice::findOrFail($this->payment_invoice_id);
 
-        if ($totalPaid <= 0) {
+        $newPaid = $invoice->paid_amount + $this->payment_amount;
+
+        $pending = max($invoice->amount - $newPaid, 0);
+
+        if ($newPaid <= 0) {
             $status = 'unpaid';
         } elseif ($pending <= 0) {
             $status = 'paid';
-            $pending = 0; 
+            $pending = 0;
         } else {
             $status = 'partially_paid';
         }
+
         $invoice->update([
-            'status'         => $status,
+            'paid_amount'    => $newPaid,
             'pending_amount' => $pending,
+            'status'         => $status,
         ]);
 
         $this->showPaymentModal = false;
 
         $this->dispatch('toastr', type: 'success', message: 'Payment recorded successfully');
+    }
+
+    public function openInvoiceTypeModal()
+    {
+        $this->resetValidation();
+        $this->invoice_type = 'tax'; // default
+        $this->showInvoiceTypeModal = true;
+    }
+
+    public function proceedToInvoiceForm()
+    {
+        $this->showInvoiceTypeModal = false;
+        $this->openModal(); // your existing modal
+    }
+
+    private function generateNonTaxInvoiceNumber()
+    {
+        $today = now();
+
+        $fyStart = $today->month >= 4 ? $today->year : $today->year - 1;
+        $fyEnd   = $fyStart + 1;
+
+        $financialYear = substr($fyStart, -2) . substr($fyEnd, -2);
+
+        $count = Invoice::where('invoice_type', 'non_tax')
+            ->whereYear('created_at', $today->year)
+            ->count() + 1;
+
+        $sequence = str_pad($count, 4, '0', STR_PAD_LEFT);
+
+        return "TM/{$financialYear}/{$sequence}";
+    }
+
+    public function updatedInvoiceType($value)
+    {
+        if ($value === 'non_tax') {
+            $this->invoice_number = $this->generateNonTaxInvoiceNumber();
+        } else {
+            $this->invoice_number = null;
+        }
     }
 
 

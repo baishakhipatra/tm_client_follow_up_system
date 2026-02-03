@@ -19,6 +19,7 @@ class Projects extends Component
     public $project_code;
     public $client_id;
     public $project_cost;
+    public $payment_received;
     public $payment_terms;
     public $start_date;
     public $end_date;
@@ -29,9 +30,10 @@ class Projects extends Component
         'client_id' => 'required|exists:clients,id',
         'project_cost' => 'required|numeric|min:0',
         'project_code' => 'nullable|string|max:100',
+        'payment_received'  => 'nullable|numeric|min:0',
         'payment_terms' => 'nullable|string|max:100',
-        'start_date' => 'required|date',
-        'end_date' => 'required|date|after_or_equal:start_date',
+        'start_date' => 'nullable|date',
+        'end_date' => 'nullable|date|after_or_equal:start_date',
     ];
 
     private function resetForm()
@@ -42,6 +44,7 @@ class Projects extends Component
             'project_code',
             'client_id',
             'project_cost',
+            'payment_received',
             'payment_terms',
             'start_date',
             'end_date',
@@ -76,6 +79,7 @@ class Projects extends Component
                 'project_code'   => $this->project_code,
                 'client_id'      => $this->client_id,
                 'project_cost'   => $this->project_cost,
+                'payment_received'  => $this->payment_received ?? 0,
                 'payment_terms'  => $this->payment_terms,
                 'start_date'     => $this->start_date,
                 'end_date'       => $this->end_date,
@@ -102,6 +106,7 @@ class Projects extends Component
         $this->project_code = ucwords($project->project_code);
         $this->client_id = $project->client_id;
         $this->project_cost = $project->project_cost;
+        $this->payment_received = $project->payment_received;
         $this->payment_terms = ucwords($project->payment_terms);
         $this->start_date = $project->start_date;
         $this->end_date = $project->end_date;
