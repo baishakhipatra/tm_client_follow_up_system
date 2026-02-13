@@ -9,25 +9,44 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css">
     @livewireStyles
+    <style>
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 16.6667%; /* col-md-2 width */
+            overflow-y: auto;
+        }
+
+        .main-wrapper {
+            margin-left: 16.6667%; /* same as sidebar width */
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-content {
+            flex: 1;
+            overflow-y: auto;
+        }
+    </style>
 </head>
 <body class="bg-light">
 
     <div class="container-fluid">
-        <div class="row min-vh-100">
+        @include('partials.sidebar')
 
-            <div class="col-md-2 p-0">
-                @include('partials.sidebar')
-            </div>
+        <div class="main-wrapper">
 
-            <div class="col-md-10 p-0">
-                @include('partials.header')
+            @include('partials.header')
 
-                <main class="p-4">
-                    {{ $slot }}
-                </main>
+            <div class="main-content p-4">
+                {{ $slot }}
             </div>
 
         </div>
+
     </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

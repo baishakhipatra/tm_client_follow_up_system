@@ -37,8 +37,8 @@
                     <tbody>
                         @forelse ($clients as $client)
                             <tr wire:key="client-{{ $client->id }}">
-                                <td class="fw-medium">{{ ucwords($client->client_name) }}</td>
-                                <td>{{ $client->phone_number }}</td>
+                                <td class="fw-medium">{{ ucwords($client->client_name) }}<br>Company: {{ucwords($client->company_name)}}</td>
+                                <td>{{ $client->phone_number }}<br>{{$client->primary_email }}</td>
                                 <td>{{ $client->gst ?? '-' }}</td>
                                 <td>
                                     <div class="form-check form-switch">

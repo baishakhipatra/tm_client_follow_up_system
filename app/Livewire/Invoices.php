@@ -6,10 +6,17 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Invoice;
 use App\Models\Project;
+use App\Models\Clients;
+use App\Models\ProjectLedger;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\InvoicesExport;
+use Barryvdh\DomPDF\Facade\Pdf;
+
 
 class Invoices extends Component
 {
+    use WithPagination;
     protected $paginationTheme = 'bootstrap';
 
     public $showModal = false;
@@ -33,8 +40,12 @@ class Invoices extends Component
     public $paid_amount = 0;
     public $showInvoiceTypeModal = false;
     public $invoice_type = 'tax';
-
-
+    public $project_due = 0;
+    public $isViewMode = false;
+    public $filter_from_date;
+    public $filter_to_date;
+    public $filter_client;
+    public $filter_project;
 
     protected function rules()
     {
@@ -55,15 +66,84 @@ class Invoices extends Component
         'invoice_number.unique' => 'Invoice number must be unique. This invoice number already exists.',
     ];
 
+    public function updatingFilterFromDate() { $this->resetPage(); }
+    public function updatingFilterToDate() { $this->resetPage(); }
+    public function updatingFilterClient() { $this->resetPage(); }
+    public function updatingFilterProject() { $this->resetPage(); }
 
+    // public function render()
+    // {
+    //     return view('livewire.invoices', [
+    //         'invoices'     => Invoice::with('client')->latest()->paginate(10),
+    //         'projectsList' => Project::with('client')->get(),
+    //     ]);
+    // }
     public function render()
     {
+        $query = Invoice::with(['client', 'project']);
+
+        if ($this->filter_from_date) {
+            $query->whereDate('invoice_date', '>=', $this->filter_from_date);
+        }
+
+        if ($this->filter_to_date) {
+            $query->whereDate('invoice_date', '<=', $this->filter_to_date);
+        }
+
+        if ($this->filter_client) {
+            $query->where('client_id', $this->filter_client);
+        }
+
+        if ($this->filter_project) {
+            $query->where('project_id', $this->filter_project);
+        }
+
         return view('livewire.invoices', [
-            'invoices'     => Invoice::with('client')->latest()->get(),
-            'projectsList' => Project::with('client')->get(),
+            'invoices'     => $query->latest()->paginate(10),
+            'projectsList' => Project::with('Client')->get(),
+            'clientsList'  => Clients::where('status',1)->get(),
         ]);
     }
 
+    public function viewPaymentDetails($invoiceId)
+    {
+        $invoice = Invoice::with('Client')->findOrFail($invoiceId);
+
+        $this->selectedInvoice = $invoice;
+        $this->payment_invoice_id = $invoice->id;
+        $this->payment_amount = $invoice->paid_amount;
+        $this->payment_date = $invoice->payment_date;
+        $this->payment_method = $invoice->payment_method;
+        $this->payment_notes = $invoice->payment_notes;
+
+        $this->isViewMode = true; 
+        $this->showPaymentModal = true;
+    }
+
+    public function updatedProjectId()
+    {
+        if (!$this->project_id) {
+            $this->project_due = 0;
+            return;
+        }
+
+        $project = Project::find($this->project_id);
+
+        if (!$project) {
+            $this->project_due = 0;
+            return;
+        }
+
+        $totalPayable = $project->total_cost 
+            ?? ($project->project_cost + $project->gst_amount);
+
+        $received = $project->payment_received ?? 0;
+
+        $this->project_due = max(
+            $totalPayable - $received,
+            0
+        );
+    }
 
     public function openModal()
     {
@@ -84,6 +164,11 @@ class Invoices extends Component
     public function saveInvoices()
     {
         $this->validate();
+
+        if ($this->amount > $this->project_due) {
+            $this->addError('amount', 'Invoice amount cannot exceed project due.');
+            return;
+        }
 
         $project = Project::findOrFail($this->project_id);
 
@@ -110,8 +195,23 @@ class Invoices extends Component
                 'due_date' => $this->due_date,
                 'amount' => $this->amount,
                 'paid_amount'     => 0,
-                'pending_amount'  => $project->project_cost - 0,
+                'pending_amount'  => $this->amount,
                 'status' => 'unpaid',
+            ]);
+
+            $lastBalance = ProjectLedger::where('project_id', $project->id) ->latest('id') ->value('balance') ?? 0;
+
+            $newBalance = $lastBalance + $this->amount;
+
+            ProjectLedger::create([
+                'project_id' => $project->id,
+                'entry_date' => $this->invoice_date,
+                'reference'  => $this->invoice_number,
+                'type'       => 'invoice',
+                'debit'      => $this->amount,
+                'credit'     => 0,
+                'balance' => $newBalance,
+                'description'=> 'Invoice raised',
             ]);
 
             $message = 'Invoice created successfully';
@@ -124,8 +224,6 @@ class Invoices extends Component
         $this->dispatch('toastr', type: 'success', message: $message);
     }
 
-
-
     public function editInvoice($id)
     {
         $invoice = Invoice::findOrFail($id);
@@ -136,7 +234,9 @@ class Invoices extends Component
         $this->due_date = $invoice->due_date;
         $this->amount = $invoice->amount;
         $this->pending_amount = $invoice->pending_amount;
-        $this->project_id = Project::where('client_id', $invoice->client_id)->first()?->id;
+        // $this->project_id = Project::where('client_id', $invoice->client_id)->first()?->id;
+        $this->project_id = $invoice->project_id;
+        $this->invoice_type = $invoice->invoice_type; 
 
         $this->isEdit = true;
         $this->showModal = true;
@@ -144,7 +244,7 @@ class Invoices extends Component
 
     public function openPaymentModal($invoiceId)
     {
-        $invoice = Invoice::with('client')->findOrFail($invoiceId);
+        $invoice = Invoice::with('Client')->findOrFail($invoiceId);
 
         $this->selectedInvoice = $invoice;
         $this->payment_invoice_id = $invoice->id;
@@ -153,11 +253,10 @@ class Invoices extends Component
         $this->payment_method = null;
         $this->payment_notes = null;
 
+        $this->isViewMode = false;
         $this->resetValidation();
         $this->showPaymentModal = true;
     }
-
-
 
     public function storePayment()
     {
@@ -167,43 +266,79 @@ class Invoices extends Component
             'payment_date'       => 'required|date',
         ]);
 
-        $invoice = Invoice::findOrFail($this->payment_invoice_id);
+        DB::transaction(function () {
 
-        $newPaid = $invoice->paid_amount + $this->payment_amount;
+            $invoice = Invoice::findOrFail($this->payment_invoice_id);
 
-        $pending = max($invoice->amount - $newPaid, 0);
+            if ($this->payment_amount > $invoice->pending_amount) {
+                $this->addError('payment_amount', 'Payment exceeds pending amount.');
+                return;
+            }
 
-        if ($newPaid <= 0) {
-            $status = 'unpaid';
-        } elseif ($pending <= 0) {
-            $status = 'paid';
-            $pending = 0;
-        } else {
-            $status = 'partially_paid';
-        }
+            $newPaid = $invoice->paid_amount + $this->payment_amount;
+            $pending = max($invoice->amount - $newPaid, 0);
 
-        $invoice->update([
-            'paid_amount'    => $newPaid,
-            'pending_amount' => $pending,
-            'status'         => $status,
-        ]);
+            $status = $pending == 0
+                ? 'paid'
+                : ($newPaid > 0 ? 'partially_paid' : 'unpaid');
+
+            $invoice->update([
+                'paid_amount'    => $newPaid,
+                'pending_amount' => $pending,
+                'status'         => $status,
+                'payment_date'   => $this->payment_date,
+                'payment_method' => $this->payment_method,
+                'payment_notes'  => $this->payment_notes,
+            ]);
+
+            $project = Project::find($invoice->project_id);
+
+            if ($project) {
+
+                $newReceived = ($project->payment_received ?? 0) + $this->payment_amount;
+                $newReceived = min($newReceived, $project->total_cost);
+
+                $project->update([
+                    'payment_received' => $newReceived,
+                ]);
+
+                $lastBalance = ProjectLedger::where('project_id', $project->id)
+                    ->latest('id')
+                    ->value('balance') ?? 0;
+
+                $newBalance = $lastBalance - $this->payment_amount;
+
+                ProjectLedger::create([
+                    'project_id' => $project->id,
+                    'entry_date' => $this->payment_date,
+                    'reference'  => 'PAY-' . $invoice->invoice_number,
+                    'type'       => 'payment',
+                    'debit'      => 0,
+                    'credit'     => $this->payment_amount,
+                    'balance'    => $newBalance,
+                    'description'=> 'Payment received against invoice ' . $invoice->invoice_number,
+                ]);
+
+            }
+        });
 
         $this->showPaymentModal = false;
 
         $this->dispatch('toastr', type: 'success', message: 'Payment recorded successfully');
     }
 
+
     public function openInvoiceTypeModal()
     {
         $this->resetValidation();
-        $this->invoice_type = 'tax'; // default
+        $this->invoice_type = 'tax'; 
         $this->showInvoiceTypeModal = true;
     }
 
     public function proceedToInvoiceForm()
     {
         $this->showInvoiceTypeModal = false;
-        $this->openModal(); // your existing modal
+        $this->openModal(); 
     }
 
     private function generateNonTaxInvoiceNumber()
@@ -243,7 +378,63 @@ class Invoices extends Component
             'project_id',
             'invoice_date',
             'due_date',
-            'isEdit'
+            'isEdit',
         ]);
     }
+
+    public function resetFilters()
+    {
+        $this->reset([
+            'filter_from_date',
+            'filter_to_date',
+            'filter_client',
+            'filter_project',
+        ]);
+
+        $this->resetPage(); 
+    }
+
+    public function exportExcel()
+    {
+        $filters = [
+            'from'    => $this->filter_from_date,
+            'to'      => $this->filter_to_date,
+            'client'  => $this->filter_client,
+            'project' => $this->filter_project,
+        ];
+
+        return Excel::download(new InvoicesExport($filters), 'invoices.xlsx');
+    }
+
+    public function exportPdf()
+    {
+        $query = Invoice::with(['Client', 'project']);
+
+        if ($this->filter_from_date) {
+            $query->whereDate('invoice_date', '>=', $this->filter_from_date);
+        }
+
+        if ($this->filter_to_date) {
+            $query->whereDate('invoice_date', '<=', $this->filter_to_date);
+        }
+
+        if ($this->filter_client) {
+            $query->where('client_id', $this->filter_client);
+        }
+
+        if ($this->filter_project) {
+            $query->where('project_id', $this->filter_project);
+        }
+
+        $invoices = $query->latest()->get();
+
+        $pdf = Pdf::loadView('exports.invoices-pdf', compact('invoices'))
+            ->setPaper('a4', 'portrait');
+
+        return response()->streamDownload(
+            fn () => print($pdf->output()),
+            "invoices.pdf"
+        );
+    }
+
 }

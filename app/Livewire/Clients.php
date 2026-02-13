@@ -28,9 +28,20 @@ class Clients extends Component
     protected $rules = [
         'client_name' => 'required|string|max:255',
         'company_name' => 'required|string|max:255',
-        'primary_email' => 'required|email|max:255',
+        'primary_email' => 'required|email|unique:clients,primary_email',
         'phone_number' => 'required|digits:10',
         'billing_address' => 'required|string|max:255',
+    ];
+
+    protected function rules()
+    {
+        return [
+            'primary_email' => 'required|email|unique:clients,primary_email,' . $this->clientId,
+        ];
+    }
+
+    protected $messages = [
+        'primary_email.unique' => 'This email is already registered.',
     ];
 
     private function resetForm()

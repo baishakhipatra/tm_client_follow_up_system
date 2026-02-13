@@ -10,8 +10,12 @@ class Project extends Model
         'project_name',
         'client_id',
         'project_code',
+        'gst_amount',
+        'total_cost',
+        'is_taxable',
         'payment_received',
         'project_cost',
+        'invoiced_amount',
         'payment_terms',
         'start_date',
         'end_date',
@@ -21,5 +25,9 @@ class Project extends Model
     public function client()
     {
         return $this->belongsTo(Clients::class);
+    }
+
+    public function invoices(){
+        return $this->hasMany(Invoice::class);
     }
 }

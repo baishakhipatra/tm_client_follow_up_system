@@ -30,6 +30,8 @@
                             <th>Project</th>
                             <th>Client</th>
                             <th>Project Cost</th>
+                            <th>Tax Amount</th>
+                            <th>Total Amount</th>
                             <th>Invoiced</th>
                             <th>Received</th>
                             <th>Due</th>
@@ -46,11 +48,31 @@
                                     {{ ucwords(optional($project->client)->client_name ?? '-') }} <br>
                                     Company: {{ ucwords(optional($project->client)->company_name ?? '-') }}
                                 </td>
+                                {{-- @php
+                                    $totalPayable = $project->total_cost 
+                                        ?? ($project->project_cost + $project->gst_amount);
 
-                                <td>{{ $project->project_cost ?? '-' }}</td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
+                                    $received = $project->payment_received ?? 0;  
+                                    $invoiceTotal = $project->invoice_total ?? 0; 
+                                    $invoiced = $advance + $invoiceTotal;
+
+                                    $due = max(0, $totalPayable - $advance);
+                                @endphp --}}
+                                @php
+                                    $totalPayable = $project->total_cost 
+                                        ?? ($project->project_cost + $project->gst_amount);
+                                    $received = $project->payment_received ?? 0;
+                                    $invoiced = $project->invoice_total ?? 0;
+
+                                    $due = max(0, $totalPayable - $received);
+                                @endphp
+
+                                <td>{{ number_format($project->project_cost, 2) }}</td>
+                                <td>{{ number_format($project->gst_amount, 2) }}</td>
+                                <td>{{ number_format($totalPayable, 2) }}</td>
+                                <td>{{ number_format($invoiced, 2) }}</td>
+                                <td class="fw-bold text-success">{{ number_format($received, 2) }}</td>
+                                <td class="fw-bold text-danger">{{ number_format($due, 2) }}</td>
                                 <td>Start-date: {{ $project->start_date ?? '-' }} <br> End-date: {{ $project->end_date ?? '-' }}</td>
                                 <td>
                                     <div class="d-flex gap-2">
@@ -67,7 +89,7 @@
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="5" class="text-center py-5 text-muted">
+                                <td colspan="10" class="text-center py-5 text-muted">
                                     No clients found
                                 </td>
                             </tr>
@@ -81,7 +103,7 @@
         </div>
     </div>
     @if($showModal)
-    <div wire:ignore.self class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow">
 
@@ -129,10 +151,52 @@
                         <div class="col-md-6">
                             <label class="form-label">Total Project Cost <span class="text-danger">*</span></label>
                             <input type="number" class="form-control"
-                                wire:model.defer="project_cost">
+                                wire:model="project_cost">
                                 @error('project_cost')
                                     <small class="text-danger">{{ $message }}</small>
                                 @enderror
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Tax Type</label>
+                            <div class="d-flex gap-3 mt-2">
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                        type="radio"
+                                        wire:model.live="is_taxable"
+                                        value="1"
+                                        id="taxable">
+                                    <label class="form-check-label" for="taxable">
+                                        Taxable (18% GST)
+                                    </label>
+                                </div>
+
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                        type="radio"
+                                        wire:model.live="is_taxable"
+                                        value="0"
+                                        id="nonTaxable">
+                                    <label class="form-check-label" for="nonTaxable">
+                                        Non-Taxable
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if($is_taxable)
+                            <div class="col-md-6">
+                                <label class="form-label">GST (18%)</label>
+                                <input type="text" class="form-control" readonly
+                                    value="₹ {{ number_format($gst_amount, 2) }}">
+                            </div>
+                        @endif
+
+                        <div class="col-md-6">
+                            <label class="form-label fw-bold">Total Payable Amount</label>
+                            <input type="text" class="form-control fw-bold text-success"
+                                readonly
+                                value="₹ {{ number_format($total_cost, 2) }}">
                         </div>
 
                         <div class="col-md-6">

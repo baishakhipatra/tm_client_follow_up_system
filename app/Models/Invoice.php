@@ -16,6 +16,9 @@ class Invoice extends Model
         'amount',
         'paid_amount',
         'pending_amount',
+        'payment_date',
+        'payment_method',
+        'payment_notes',
         'status',
     ];
 
