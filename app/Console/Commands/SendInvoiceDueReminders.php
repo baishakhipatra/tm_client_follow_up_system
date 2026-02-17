@@ -5,13 +5,14 @@ use App\Models\Invoice;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 use App\Mail\InvoiceDueReminderMail;
+use App\Services\InvoiceReminderService;
 
 class SendInvoiceDueReminders extends Command
 {
     protected $signature = 'invoice:send-due-reminders';
     protected $description = 'Send daily invoice due reminders';
 
-    public function handle()
+    public function handle(InvoiceReminderService $service)
     {
         $today = now()->toDateString();
 
@@ -23,14 +24,18 @@ class SendInvoiceDueReminders extends Command
 
         foreach ($invoices as $invoice) {
 
-            if (!$invoice->client?->primary_email) {
-                continue;
+            if ($service->sendReminder($invoice)) {
+                $this->info('Reminder sent for invoice ' . $invoice->invoice_number);
             }
 
-            Mail::to($invoice->client->primary_email)
-                ->send(new InvoiceDueReminderMail($invoice));
+            // if (!$invoice->client?->primary_email) {
+            //     continue;
+            // }
 
-            $this->info('Reminder sent for invoice ' . $invoice->invoice_number);
+            // Mail::to($invoice->client->primary_email)
+            //     ->send(new InvoiceDueReminderMail($invoice));
+
+            // $this->info('Reminder sent for invoice ' . $invoice->invoice_number);
         }
 
         return Command::SUCCESS;

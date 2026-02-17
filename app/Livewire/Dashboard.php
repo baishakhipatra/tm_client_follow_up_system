@@ -23,18 +23,18 @@ class Dashboard extends Component
         $this->projects = Project::where('status', '1')
             ->count();
 
-        $this->overdueInvoices = Invoice::whereIn('status', ['unpaid', 'partially_paid'])
-            ->whereDate('due_date', '<', Carbon::today())
-            ->count();
+        // $this->overdueInvoices = Invoice::whereIn('status', ['unpaid', 'partially_paid'])
+        //     ->whereDate('due_date', '<', Carbon::today())
+        //     ->count();
 
-        $this->paymentsToday = Invoice::where('status', 'paid')
-            ->whereDate('updated_at', Carbon::today())
-            ->sum('amount');
+        // $this->paymentsToday = Invoice::where('status', 'paid')
+        //     ->whereDate('updated_at', Carbon::today())
+        //     ->sum('amount');
 
-        $this->pendingInvoices = Invoice::where('status', 'unpaid')
-            ->orderBy('due_date')
-            ->limit(5)
-            ->get();
+        // $this->pendingInvoices = Invoice::where('status', 'unpaid')
+        //     ->orderBy('due_date')
+        //     ->limit(5)
+        //     ->get();
     }
     public function render()
     {

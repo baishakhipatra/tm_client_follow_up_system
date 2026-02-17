@@ -9,17 +9,12 @@ class Invoice extends Model
     protected $fillable = [
         'client_id',
         'project_id',
-        'invoice_type',
         'invoice_number',
-        'invoice_date',
-        'due_date',
-        'amount',
-        'paid_amount',
-        'pending_amount',
-        'payment_date',
-        'payment_method',
-        'payment_notes',
+        'net_price',
+        'required_payment_amount',
         'status',
+        'created_by',
+        'updated_by',
     ];
 
     public function Client(){
@@ -31,4 +26,8 @@ class Invoice extends Model
         return $this->belongsTo(Project::class, 'project_id');
     }
 
+    public function invoicePayments()
+    {
+        return $this->hasMany(InvoicePayment::class);
+    }
 }

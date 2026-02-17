@@ -73,9 +73,9 @@
                         </tr>
                     </thead>
                     <tbody>
-                        @forelse($pendingInvoices as $invoice)
+                        {{-- @forelse($pendingInvoices as $invoice)
                             <tr>
-                                <td>#{{ $invoice->invoice_number }}</td>
+                                <td>#{{ $invoice->invoice_number ?? 'N/A' }}</td>
                                 <td>{{ \Carbon\Carbon::parse($invoice->due_date)->format('d M Y') }}</td>
                                 <td>₹{{ number_format($invoice->pending_amount, 2) }}</td>
                                 <td>
@@ -88,7 +88,7 @@
                                     No pending invoices
                                 </td>
                             </tr>
-                        @endforelse
+                        @endforelse --}}
                     </tbody>
                 </table>
             </div>

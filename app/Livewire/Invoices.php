@@ -5,6 +5,8 @@ namespace App\Livewire;
 use Livewire\Component;
 use Livewire\WithPagination;
 use App\Models\Invoice;
+use App\Models\Payment;
+use App\Models\InvoicePayment;
 use App\Models\Project;
 use App\Models\Clients;
 use App\Models\ProjectLedger;
@@ -12,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\InvoicesExport;
 use Barryvdh\DomPDF\Facade\Pdf;
-
+use App\Services\InvoiceReminderService;
 
 class Invoices extends Component
 {
@@ -34,7 +36,7 @@ class Invoices extends Component
     public $payment_invoice_id;
     public $payment_amount;
     public $payment_date;
-    public $payment_method;
+    public $payment_method = 'cash';
     public $payment_notes;
     public $selectedInvoice;
     public $paid_amount = 0;
@@ -46,24 +48,31 @@ class Invoices extends Component
     public $filter_to_date;
     public $filter_client;
     public $filter_project;
+    public $client_id;
+    public $total_due = 0;
+    public $selectedPayment;
+    public $selectedInvoices = [];
+    public $payment_id;
+    public $clientInvoices = [];
+    public $showViewVoucherModal = false;
+    public $viewVoucherData;
+    public $viewVoucherInvoices = [];
+    public $voucherAmount = 0;
 
     protected function rules()
     {
         return [
-            'invoice_number' => $this->invoice_type === 'tax'
-            ? 'required|string|max:255|unique:invoices,invoice_number,' . $this->invoiceId
-            : 'required|string|max:255',
+            'invoice_number' => 'required|string|unique:invoices,invoice_number,' . $this->invoiceId,
             'project_id'     => 'required',
             'invoice_date'   => 'required|date',
             'due_date'       => 'required|date|after_or_equal:invoice_date',
             'amount'         => 'required|numeric|min:0',
-            'paid_amount'    => 'nullable|numeric|min:0',
         ];
     }
 
 
     protected $messages = [
-        'invoice_number.unique' => 'Invoice number must be unique. This invoice number already exists.',
+        'invoice_number.unique' => 'Voucher number must be unique. This voucher number already exists.',
     ];
 
     public function updatingFilterFromDate() { $this->resetPage(); }
@@ -98,11 +107,39 @@ class Invoices extends Component
             $query->where('project_id', $this->filter_project);
         }
 
+        $payments = Payment::with('client')
+        ->latest()
+        ->paginate(10);
+
         return view('livewire.invoices', [
             'invoices'     => $query->latest()->paginate(10),
             'projectsList' => Project::with('Client')->get(),
             'clientsList'  => Clients::where('status',1)->get(),
+            'payments' => $payments,
         ]);
+    }
+
+    public function viewVoucher($paymentId)
+    {
+        // $this->viewVoucherData = Payment::with([
+        //     'client',
+        //     'invoicePayments.invoice'
+        // ])->findOrFail($paymentId);
+
+        // $this->viewVoucherInvoices = $this->viewVoucherData->invoicePayments;
+
+        // $this->showViewVoucherModal = true;
+        $payment = Payment::with('Client')->findOrFail($paymentId);
+
+        $this->payment_id    = $payment->id;
+        $this->voucherAmount = $payment->payment_amount;
+
+        $this->clientInvoices = Invoice::where('client_id', $payment->client_id)
+            ->whereIn('status', [0, 1])
+            ->orderBy('created_at')
+            ->get();
+
+        $this->showPaymentModal = true;
     }
 
     public function viewPaymentDetails($invoiceId)
@@ -120,29 +157,19 @@ class Invoices extends Component
         $this->showPaymentModal = true;
     }
 
-    public function updatedProjectId()
+    public function ChangeclientId($clientId)
     {
-        if (!$this->project_id) {
-            $this->project_due = 0;
+        if (!$clientId) {
+            $this->total_due = 0;
+            $this->payment_amount = 0;
             return;
         }
 
-        $project = Project::find($this->project_id);
+        $this->total_due = Invoice::where('client_id', $clientId)
+            ->whereIn('status', [0, 1])
+            ->sum('required_payment_amount');
 
-        if (!$project) {
-            $this->project_due = 0;
-            return;
-        }
-
-        $totalPayable = $project->total_cost 
-            ?? ($project->project_cost + $project->gst_amount);
-
-        $received = $project->payment_received ?? 0;
-
-        $this->project_due = max(
-            $totalPayable - $received,
-            0
-        );
+        $this->payment_amount = $this->total_due;
     }
 
     public function openModal()
@@ -151,6 +178,7 @@ class Invoices extends Component
 
         $this->invoiceId = null;
         $this->isEdit = false;
+        $this->invoice_number = $this->generateVoucherNumber();
         $this->showModal = true;
     }
 
@@ -160,69 +188,241 @@ class Invoices extends Component
         $this->resetForm();
     }
 
-
-    public function saveInvoices()
+    public function openPayModal($paymentId)
     {
-        $this->validate();
+        $this->payment_id = $paymentId;
 
-        if ($this->amount > $this->project_due) {
-            $this->addError('amount', 'Invoice amount cannot exceed project due.');
-            return;
-        }
+        $payment = Payment::findOrFail($paymentId);
 
-        $project = Project::findOrFail($this->project_id);
+        $this->clientInvoices = Invoice::where('client_id', $payment->client_id)
+            ->whereIn('status', [0,1])
+            ->get();
 
-        if ($this->isEdit) {
-            $invoice = Invoice::findOrFail($this->invoiceId);
-
-            $invoice->update([
-                'client_id' => $project->client_id,
-                'invoice_number' => $this->invoice_number,
-                'invoice_date' => $this->invoice_date,
-                'due_date' => $this->due_date,
-                'amount' => $this->amount,
-                'pending_amount' => $this->pending_amount ?? $this->amount,
-            ]);
-
-            $message = 'Invoice updated successfully';
-        } else {
-            Invoice::create([
-                'client_id' => $project->client_id,
-                'project_id' => $project->id,
-                'invoice_type' => $this->invoice_type,
-                'invoice_number' => $this->invoice_number,
-                'invoice_date' => $this->invoice_date,
-                'due_date' => $this->due_date,
-                'amount' => $this->amount,
-                'paid_amount'     => 0,
-                'pending_amount'  => $this->amount,
-                'status' => 'unpaid',
-            ]);
-
-            $lastBalance = ProjectLedger::where('project_id', $project->id) ->latest('id') ->value('balance') ?? 0;
-
-            $newBalance = $lastBalance + $this->amount;
-
-            ProjectLedger::create([
-                'project_id' => $project->id,
-                'entry_date' => $this->invoice_date,
-                'reference'  => $this->invoice_number,
-                'type'       => 'invoice',
-                'debit'      => $this->amount,
-                'credit'     => 0,
-                'balance' => $newBalance,
-                'description'=> 'Invoice raised',
-            ]);
-
-            $message = 'Invoice created successfully';
-        }
-
-        $this->reset();
-        $this->showModal = false;
-        $this->isEdit = false;
-
-        $this->dispatch('toastr', type: 'success', message: $message);
+        $this->showPaymentModal = true;
     }
+
+
+
+    public function saveVoucher()
+    {
+        $this->validate([
+            'client_id' => 'required',
+            'payment_amount' => 'required|numeric|min:1',
+        ]);
+
+        Payment::create([
+            'client_id'      => $this->client_id,
+            'payment_amount' => $this->payment_amount,
+            'payment_method' => $this->payment_method,
+            'voucher_no'     => $this->invoice_number,
+            'status'         => 0, // 0 = unpaid
+        ]);
+
+        $this->dispatch('toastr', type: 'success', message: 'Voucher created successfully');
+        $this->closeModal();
+    }
+
+
+    // public function storeVoucherPayment()
+    // {
+    //     DB::transaction(function () {
+
+    //         $payment = Payment::findOrFail($this->payment_id);
+    //         $remaining = $payment->payment_amount;
+
+    //         foreach ($this->pay_amounts as $invoiceId => $amount) {
+
+    //             if ($amount <= 0 || $remaining <= 0) continue;
+
+    //             $invoice = Invoice::findOrFail($invoiceId);
+    //             $paying = min($amount, $invoice->required_payment_amount, $remaining);
+
+    //             InvoicePayment::create([
+    //                 'invoice_id'   => $invoice->id,
+    //                 'payment_id'   => $payment->id,
+    //                 'invoice_no'   => $invoice->invoice_number,
+    //                 'invoice_amount' => $invoice->net_price,
+    //                 'paid_amount'  => $paying,
+    //                 'rest_amount'  => $invoice->required_payment_amount - $paying,
+    //             ]);
+
+    //             $invoice->required_payment_amount -= $paying;
+    //             $invoice->status = $invoice->required_payment_amount == 0 ? 2 : 1;
+    //             $invoice->save();
+
+    //             $remaining -= $paying;
+    //         }
+
+    //         $paidTotal = InvoicePayment::where('payment_id', $payment->id)->sum('paid_amount');
+    //         $payment->status = $paidTotal >= $payment->payment_amount ? 2 : 1;
+    //         $payment->save();
+    //     });
+
+    //     $this->showPaymentModal = false;
+
+    //     $this->dispatch('toastr', type: 'success', message: 'Voucher payment completed');
+    // }
+
+    public function storeVoucherPayment()
+    {
+        DB::transaction(function () {
+
+            $payment = Payment::findOrFail($this->payment_id);
+            $remaining = $payment->payment_amount;
+
+            $invoices = Invoice::where('client_id', $payment->client_id)
+                ->whereIn('status', [0, 1]) 
+                ->orderBy('created_at')
+                ->get();
+
+            foreach ($invoices as $invoice) {
+
+                if ($remaining <= 0) {
+                    break;
+                }
+
+                $paying = min($invoice->required_payment_amount, $remaining);
+
+                InvoicePayment::create([
+                    'invoice_id'      => $invoice->id,
+                    'payment_id'      => $payment->id,
+                    'invoice_no'      => $invoice->invoice_number,
+                    'invoice_amount'  => $invoice->net_price,
+                    'paid_amount'     => $paying,
+                    'rest_amount'     => $invoice->required_payment_amount - $paying,
+                ]);
+
+                $invoice->required_payment_amount -= $paying;
+                $invoice->status = $invoice->required_payment_amount == 0 ? 2 : 1;
+                $invoice->save();
+
+                $remaining -= $paying;
+            }
+            $payment->status = ($remaining == 0) ? 2 : 1;
+            $payment->save();
+        });
+
+        $this->showPaymentModal = false;
+
+        $this->dispatch(
+            'toastr',
+            type: 'success',
+            message: 'Voucher payment applied successfully'
+        );
+    }
+
+    // public function saveVoucher()
+    // {
+    //     $this->validate([
+    //         'client_id' => 'required',
+    //         'payment_amount' => 'required|numeric|min:1',
+    //     ]);
+
+    //     DB::transaction(function () {
+
+    //         $payment = Payment::create([
+    //             'client_id'      => $this->client_id,
+    //             'payment_amount' => $this->payment_amount,
+    //             'payment_method' => $this->payment_method,
+    //             'voucher_no'     => $this->invoice_number,
+    //         ]);
+
+    //         $amount = floatval($this->payment_amount);
+
+    //         $invoices = Invoice::where('client_id', $this->client_id)
+    //             ->where('status', '!=', 2)
+    //             ->orderBy('id')
+    //             ->get();
+
+    //         foreach ($invoices as $invoice) {
+    //             if ($amount <= 0) break;
+
+    //             $paying = min($amount, floatval($invoice->required_payment_amount));
+    //             InvoicePayment::create([
+    //                 'invoice_id'     => $invoice->id,
+    //                 'payment_id'     => $payment->id,
+    //                 'invoice_amount' => $invoice->net_price,
+    //                 'paid_amount'    => $paying,
+    //                 'rest_amount'    => floatval($invoice->required_payment_amount) - $paying,
+    //                 'invoice_no'     => $invoice->invoice_number,
+    //             ]);
+
+    //             $invoice->required_payment_amount -= $paying;
+
+    //             $invoice->status = $invoice->required_payment_amount == 0 ? 2 : 1;
+
+    //             $invoice->save();
+    //             $amount -= $paying;
+    //         }
+    //     });
+
+    //     $this->dispatch('toastr', type: 'success', message: 'Voucher created successfully');
+    //     $this->closeModal();
+    // }
+
+
+    // public function saveInvoices()
+    // {
+    //     $this->validate();
+
+    //     if ($this->amount > $this->project_due) {
+    //         $this->addError('amount', 'Invoice amount cannot exceed project due.');
+    //         return;
+    //     }
+
+    //     $project = Project::findOrFail($this->project_id);
+
+    //     if ($this->isEdit) {
+    //         $invoice = Invoice::findOrFail($this->invoiceId);
+
+    //         $invoice->update([
+    //             'client_id' => $project->client_id,
+    //             'invoice_number' => $this->invoice_number,
+    //             'invoice_date' => $this->invoice_date,
+    //             'due_date' => $this->due_date,
+    //             'amount' => $this->amount,
+    //             'pending_amount' => $this->pending_amount ?? $this->amount,
+    //         ]);
+
+    //         $message = 'Invoice updated successfully';
+    //     } else {
+    //         Invoice::create([
+    //             'client_id' => $project->client_id,
+    //             'project_id' => $project->id,
+    //             'invoice_type' => $this->invoice_type,
+    //             'invoice_number' => $this->invoice_number,
+    //             'invoice_date' => $this->invoice_date,
+    //             'due_date' => $this->due_date,
+    //             'amount' => $this->amount,
+    //             'paid_amount'     => 0,
+    //             'pending_amount'  => $this->amount,
+    //             'status' => 'unpaid',
+    //         ]);
+
+    //         $lastBalance = ProjectLedger::where('project_id', $project->id) ->latest('id') ->value('balance') ?? 0;
+
+    //         $newBalance = $lastBalance + $this->amount;
+
+    //         ProjectLedger::create([
+    //             'project_id' => $project->id,
+    //             'entry_date' => $this->invoice_date,
+    //             'reference'  => $this->invoice_number,
+    //             'type'       => 'invoice',
+    //             'debit'      => $this->amount,
+    //             'credit'     => 0,
+    //             'balance' => $newBalance,
+    //             'description'=> 'Invoice raised',
+    //         ]);
+
+    //         $message = 'Invoice created successfully';
+    //     }
+
+    //     $this->reset();
+    //     $this->showModal = false;
+    //     $this->isEdit = false;
+
+    //     $this->dispatch('toastr', type: 'success', message: $message);
+    // }
 
     public function editInvoice($id)
     {
@@ -327,37 +527,35 @@ class Invoices extends Component
         $this->dispatch('toastr', type: 'success', message: 'Payment recorded successfully');
     }
 
-
-    public function openInvoiceTypeModal()
-    {
-        $this->resetValidation();
-        $this->invoice_type = 'tax'; 
-        $this->showInvoiceTypeModal = true;
-    }
-
     public function proceedToInvoiceForm()
     {
         $this->showInvoiceTypeModal = false;
         $this->openModal(); 
     }
 
-    private function generateNonTaxInvoiceNumber()
+    private function generateVoucherNumber()
     {
         $today = now();
-
         $fyStart = $today->month >= 4 ? $today->year : $today->year - 1;
         $fyEnd   = $fyStart + 1;
 
         $financialYear = substr($fyStart, -2) . substr($fyEnd, -2);
+        $lastVoucher = Payment::where('voucher_no', 'like', "TM/{$financialYear}/%")
+            ->orderByDesc('id')
+            ->value('voucher_no');
 
-        $count = Invoice::where('invoice_type', 'non_tax')
-            ->whereYear('created_at', $today->year)
-            ->count() + 1;
+        if ($lastVoucher) {
+            $lastSequence = (int) substr($lastVoucher, -4);
+            $nextSequence = $lastSequence + 1;
+        } else {
+            $nextSequence = 1;
+        }
 
-        $sequence = str_pad($count, 4, '0', STR_PAD_LEFT);
+        $sequence = str_pad($nextSequence, 4, '0', STR_PAD_LEFT);
 
         return "TM/{$financialYear}/{$sequence}";
     }
+
 
     public function updatedInvoiceType($value)
     {
@@ -435,6 +633,21 @@ class Invoices extends Component
             fn () => print($pdf->output()),
             "invoices.pdf"
         );
+    }
+
+    public function sendDueReminder($invoiceId, InvoiceReminderService $service)
+    {
+        $invoice = Invoice::with(['Client', 'project'])->findOrFail($invoiceId);
+
+        if ($service->sendReminder($invoice)) {
+            $this->dispatch('toastr',
+                type: 'success',
+                message: 'Invoice reminder email sent successfully.');
+        } else {
+            $this->dispatch('toastr',
+                type: 'error',
+                message: 'Unable to send reminder. Check invoice status or email.');
+        }
     }
 
 }

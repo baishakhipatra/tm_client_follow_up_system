@@ -3,9 +3,14 @@
 namespace App\Livewire;
 use App\Models\Project;
 use App\Models\Clients;
+use App\Models\Invoice;
+use App\Models\InvoicePayment;
+use App\Models\Payment;
 use App\Models\ProjectLedger;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class Projects extends Component
 {
@@ -105,65 +110,145 @@ class Projects extends Component
 
     public function saveProject()
     {
-        //dd($this->validate());
         $this->validate();
 
-        $received = $this->payment_received ?? 0;
+        DB::transaction(function () {
 
-        if ($received > $this->project_cost) {
-            $received = $this->project_cost;
-        }
+            $received = $this->payment_received ?? 0;
 
-        $project = Project::updateOrCreate(
-            ['id' => $this->projectId],
-            [
-                'project_name'   => $this->project_name,
-                'project_code'   => $this->project_code,
-                'client_id'      => $this->client_id,
-                'project_cost'   => $this->project_cost,
-                'gst_amount'     => $this->gst_amount,
-                'total_cost'     => $this->total_cost,
-                'is_taxable'     => $this->is_taxable,
-                'payment_received'  => $received,
-                'payment_terms'  => $this->payment_terms,
-                'start_date'     => $this->start_date,
-                'end_date'       => $this->end_date,
-                'status'         => 1,
-            ]
-        );
+            if ($received > $this->project_cost) {
+                $received = $this->project_cost;
+            }
 
-        ProjectLedger::create([
-            'project_id' => $project->id,
-            'entry_date' => now(),
-            'reference'  => $project->project_code,
-            'type'       => 'invoice',
-            'debit'      => $project->total_cost,
-            'credit'     => 0,
-            'balance'    => $project->total_cost,
-            'description'=> 'Project cost',
-        ]);
+            $project = Project::updateOrCreate(
+                ['id' => $this->projectId],
+                [
+                    'project_name'      => $this->project_name,
+                    'project_code'      => $this->project_code,
+                    'client_id'         => $this->client_id,
+                    'project_cost'      => $this->project_cost,
+                    'gst_amount'        => $this->gst_amount,
+                    'total_cost'        => $this->total_cost,
+                    'is_taxable'        => $this->is_taxable,
+                    'payment_received'  => $received,
+                    'payment_terms'     => $this->payment_terms,
+                    'start_date'        => $this->start_date,
+                    'end_date'          => $this->end_date,
+                    'status'            => 1,
+                ]
+            );
 
-        if ($received > 0) {
-            ProjectLedger::create([
-                'project_id' => $project->id,
-                'entry_date' => now(),
-                'reference'  => 'ADVANCE',
-                'type'       => 'payment',
-                'debit'      => 0,
-                'credit'     => $received,
-                'balance'    => $project->total_cost - $received,
-                'description'=> 'Advance received',
+            $invoiceNumber = ($this->is_taxable ? 'TAX' : 'NTX') . '-' . now()->format('Ymd') . '-' . str_pad($project->id, 4, '0', STR_PAD_LEFT);
+
+            $status = 0; // pending
+
+            if ($received > 0 && $received < $project->total_cost) {
+                $status = 1; // half_paid
+            } elseif ($received >= $project->total_cost) {
+                $status = 2; // full_paid
+            }
+
+            $invoice = Invoice::create([
+                'client_id'                 => $this->client_id,
+                'project_id'                => $project->id,
+                'invoice_number'            => $invoiceNumber,
+                'net_price'                 => $project->total_cost,
+                'required_payment_amount'   => $project->total_cost - $received,
+                'status'                    => $status,
+                'created_by'                => auth()->id(),
             ]);
-        }
 
+            if ($received > 0) {
 
-        $this->dispatch('toastr', type: 'success', message: 
+                $voucherNo = 'VCH-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4));
+
+                $payment = Payment::create([
+                    'client_id'       => $this->client_id,
+                    'payment_amount'  => $received,
+                    'payment_method'  => $this->payment_method ?? 'cash',
+                    'voucher_no'      => $voucherNo,
+                    'status'          => 1,
+                ]);
+
+                InvoicePayment::create([
+                    'invoice_id'      => $invoice->id,
+                    'payment_id'      => $payment->id,
+                    'invoice_amount'  => $project->total_cost,
+                    'paid_amount'     => $received,
+                    'rest_amount'     => $project->total_cost - $received,
+                    'invoice_no'      => $invoice->invoice_number,
+                ]);
+            }
+        });
+
+        $this->dispatch('toastr', type: 'success', message:
             $this->isEdit ? 'Project updated successfully!' : 'Project created successfully!'
         );
 
-
         $this->closeModal();
     }
+
+    // public function saveProject()
+    // {
+    //     //dd($this->validate());
+    //     $this->validate();
+
+    //     $received = $this->payment_received ?? 0;
+
+    //     if ($received > $this->project_cost) {
+    //         $received = $this->project_cost;
+    //     }
+
+    //     $project = Project::updateOrCreate(
+    //         ['id' => $this->projectId],
+    //         [
+    //             'project_name'   => $this->project_name,
+    //             'project_code'   => $this->project_code,
+    //             'client_id'      => $this->client_id,
+    //             'project_cost'   => $this->project_cost,
+    //             'gst_amount'     => $this->gst_amount,
+    //             'total_cost'     => $this->total_cost,
+    //             'is_taxable'     => $this->is_taxable,
+    //             'payment_received'  => $received,
+    //             'payment_terms'  => $this->payment_terms,
+    //             'start_date'     => $this->start_date,
+    //             'end_date'       => $this->end_date,
+    //             'status'         => 1,
+    //         ]
+    //     );
+
+    //     ProjectLedger::create([
+    //         'project_id' => $project->id,
+    //         'entry_date' => now(),
+    //         'reference'  => $project->project_code,
+    //         'type'       => 'invoice',
+    //         'debit'      => $project->total_cost,
+    //         'credit'     => 0,
+    //         'balance'    => $project->total_cost,
+    //         'description'=> 'Project cost',
+    //     ]);
+
+    //     if ($received > 0) {
+    //         ProjectLedger::create([
+    //             'project_id' => $project->id,
+    //             'entry_date' => now(),
+    //             'reference'  => 'ADVANCE',
+    //             'type'       => 'payment',
+    //             'debit'      => 0,
+    //             'credit'     => $received,
+    //             'balance'    => $project->total_cost - $received,
+    //             'description'=> 'Advance received',
+    //         ]);
+    //     }
+
+
+    //     $this->dispatch('toastr', type: 'success', message: 
+    //         $this->isEdit ? 'Project updated successfully!' : 'Project created successfully!'
+    //     );
+
+
+    //     $this->closeModal();
+    // }
 
     public function editProject($id)
     {
@@ -221,7 +306,7 @@ class Projects extends Component
     public function render()
     {
         $projects = Project::with('client')
-            ->withSum('invoices as invoice_total', 'amount')
+            // ->withSum('invoices as invoice_total', 'amount')
             ->when($this->search, function ($query) {
                 $query->where(function ($q) {
                     $q->where('project_name', 'like', "%{$this->search}%")
