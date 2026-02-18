@@ -11,6 +11,7 @@ use Livewire\Component;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Services\VoucherNumberService;
 
 class Projects extends Component
 {
@@ -33,17 +34,22 @@ class Projects extends Component
     public $is_taxable = 0;  
     public $gst_amount = 0;
     public $total_cost = 0;
+    public $totalPaymentReceived = 0;
 
     protected $rules = [
         'project_name' => 'required|string|max:255',
         'client_id' => 'required|exists:clients,id',
         'project_cost' => 'required|numeric|min:0',
         'project_code' => 'nullable|string|max:100',
-        'payment_received'  => 'nullable|numeric|min:0',
+        'payment_received'  => 'nullable|numeric|min:0|lte:project_cost',
         'payment_terms' => 'nullable|string|max:100',
         'is_taxable' => 'required|in:0,1',
         'start_date' => 'nullable|date',
         'end_date' => 'nullable|date|after_or_equal:start_date',
+    ];
+
+    protected $messages = [
+        'payment_received.lte' => 'Received amount cannot be greater than project cost.',
     ];
 
     private function resetForm()
@@ -113,12 +119,9 @@ class Projects extends Component
         $this->validate();
 
         DB::transaction(function () {
-
             $received = $this->payment_received ?? 0;
 
-            if ($received > $this->project_cost) {
-                $received = $this->project_cost;
-            }
+            $isNewProject = !$this->projectId;
 
             $project = Project::updateOrCreate(
                 ['id' => $this->projectId],
@@ -138,14 +141,27 @@ class Projects extends Component
                 ]
             );
 
+            if ($isNewProject) {
+                ProjectLedger::create([
+                    'project_id' => $project->id,
+                    'entry_date' => now()->toDateString(),
+                    'reference'  => 'PROJECT-' . ($project->project_code ?? $project->id),
+                    'type'       => 'project_created',
+                    'debit'      => $project->total_cost,
+                    'credit'     => 0,
+                    'balance'    => $project->total_cost,
+                    'description'=> 'Project created with total cost ₹' . $project->total_cost,
+                ]);
+            }
+
             $invoiceNumber = ($this->is_taxable ? 'TAX' : 'NTX') . '-' . now()->format('Ymd') . '-' . str_pad($project->id, 4, '0', STR_PAD_LEFT);
 
-            $status = 0; // pending
+            $status = 0; 
 
             if ($received > 0 && $received < $project->total_cost) {
-                $status = 1; // half_paid
+                $status = 1; 
             } elseif ($received >= $project->total_cost) {
-                $status = 2; // full_paid
+                $status = 2;
             }
 
             $invoice = Invoice::create([
@@ -160,7 +176,7 @@ class Projects extends Component
 
             if ($received > 0) {
 
-                $voucherNo = 'VCH-' . now()->format('Ymd') . '-' . strtoupper(Str::random(4));
+                $voucherNo = VoucherNumberService::generate();
 
                 $payment = Payment::create([
                     'client_id'       => $this->client_id,
@@ -188,68 +204,6 @@ class Projects extends Component
         $this->closeModal();
     }
 
-    // public function saveProject()
-    // {
-    //     //dd($this->validate());
-    //     $this->validate();
-
-    //     $received = $this->payment_received ?? 0;
-
-    //     if ($received > $this->project_cost) {
-    //         $received = $this->project_cost;
-    //     }
-
-    //     $project = Project::updateOrCreate(
-    //         ['id' => $this->projectId],
-    //         [
-    //             'project_name'   => $this->project_name,
-    //             'project_code'   => $this->project_code,
-    //             'client_id'      => $this->client_id,
-    //             'project_cost'   => $this->project_cost,
-    //             'gst_amount'     => $this->gst_amount,
-    //             'total_cost'     => $this->total_cost,
-    //             'is_taxable'     => $this->is_taxable,
-    //             'payment_received'  => $received,
-    //             'payment_terms'  => $this->payment_terms,
-    //             'start_date'     => $this->start_date,
-    //             'end_date'       => $this->end_date,
-    //             'status'         => 1,
-    //         ]
-    //     );
-
-    //     ProjectLedger::create([
-    //         'project_id' => $project->id,
-    //         'entry_date' => now(),
-    //         'reference'  => $project->project_code,
-    //         'type'       => 'invoice',
-    //         'debit'      => $project->total_cost,
-    //         'credit'     => 0,
-    //         'balance'    => $project->total_cost,
-    //         'description'=> 'Project cost',
-    //     ]);
-
-    //     if ($received > 0) {
-    //         ProjectLedger::create([
-    //             'project_id' => $project->id,
-    //             'entry_date' => now(),
-    //             'reference'  => 'ADVANCE',
-    //             'type'       => 'payment',
-    //             'debit'      => 0,
-    //             'credit'     => $received,
-    //             'balance'    => $project->total_cost - $received,
-    //             'description'=> 'Advance received',
-    //         ]);
-    //     }
-
-
-    //     $this->dispatch('toastr', type: 'success', message: 
-    //         $this->isEdit ? 'Project updated successfully!' : 'Project created successfully!'
-    //     );
-
-
-    //     $this->closeModal();
-    // }
-
     public function editProject($id)
     {
         $this->resetValidation();
@@ -265,12 +219,17 @@ class Projects extends Component
         $this->is_taxable = $project->is_taxable;
         $this->gst_amount = $project->gst_amount;
         $this->total_cost = $project->total_cost;
-        $this->payment_received = $project->payment_received;
+        // $this->payment_received = $project->payment_received;
         $this->payment_terms = ucwords($project->payment_terms);
         $this->start_date = $project->start_date;
         $this->end_date = $project->end_date;
 
         $this->isEdit = true;
+
+        $this->totalPaymentReceived = InvoicePayment::whereHas('invoice', function ($q) use ($project) {
+            $q->where('project_id', $project->id);
+        })
+        ->sum('paid_amount');
         $this->showModal = true;
     }
 
@@ -296,21 +255,35 @@ class Projects extends Component
         );
     }
 
+    public function updatingSearch()
+    {
+        $this->resetPage();
+    }
 
-    // public function delete($id)
-    // {
-    //     Project::findOrFail($id)->delete();
-    //      $this->dispatch('toastr', type: 'success', message: 'Project deleted successfully!');
-    // }
+    public function resetSearch()
+    {
+        $this->search = '';
+        $this->resetPage();
+    }
 
     public function render()
     {
-        $projects = Project::with('client')
-            // ->withSum('invoices as invoice_total', 'amount')
+        $projects = Project::with('Client')
+            ->withSum(
+                ['invoices as received_amount' => function ($q) {
+                    $q->join('invoice_payments', 'invoice_payments.invoice_id', '=', 'invoices.id');
+                }],
+                'invoice_payments.paid_amount'
+            )
             ->when($this->search, function ($query) {
                 $query->where(function ($q) {
                     $q->where('project_name', 'like', "%{$this->search}%")
-                    ->orWhere('project_code', 'like', "%{$this->search}%");
+                    ->orWhere('project_code', 'like', "%{$this->search}%")
+                    ->orWhereHas('client', function ($clientQuery) {
+                        $clientQuery
+                            ->where('client_name', 'like', '%' . $this->search . '%')
+                            ->orWhere('company_name', 'like', '%' . $this->search . '%');
+                    });
                 });
             })
             ->orderBy('created_at', 'desc')

@@ -6,15 +6,16 @@ use Livewire\Component;
 use App\Models\Clients;
 use App\Models\Invoice;
 use App\Models\Project;
+use App\Models\InvoicePayment;
 use Carbon\Carbon;
 
 class Dashboard extends Component
 {
-    public $totalClients;
-    public $projects;
-    public $overdueInvoices;
-    public $paymentsToday;
-    public $pendingInvoices;
+    public $totalClients = 0;
+    public $projects = 0;
+    public $overdueInvoices = 0;
+    public $paymentsToday = 0;
+    public $pendingInvoices = [];
 
     public function mount()
     {
@@ -23,19 +24,19 @@ class Dashboard extends Component
         $this->projects = Project::where('status', '1')
             ->count();
 
-        // $this->overdueInvoices = Invoice::whereIn('status', ['unpaid', 'partially_paid'])
-        //     ->whereDate('due_date', '<', Carbon::today())
-        //     ->count();
+        $this->overdueInvoices = Invoice::whereIn('status', [0, 1])
+            ->whereDate('created_at', '<', Carbon::today()->subDays(30)) 
+            ->count();
 
-        // $this->paymentsToday = Invoice::where('status', 'paid')
-        //     ->whereDate('updated_at', Carbon::today())
-        //     ->sum('amount');
+        $this->paymentsToday = InvoicePayment::whereDate('created_at', Carbon::today())
+            ->sum('paid_amount');
 
-        // $this->pendingInvoices = Invoice::where('status', 'unpaid')
-        //     ->orderBy('due_date')
-        //     ->limit(5)
-        //     ->get();
+        $this->pendingInvoices = Invoice::whereIn('status', [0, 1])
+            ->orderBy('created_at')
+            ->limit(5)
+            ->get();
     }
+
     public function render()
     {
         return view('livewire.dashboard')

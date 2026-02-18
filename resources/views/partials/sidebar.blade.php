@@ -32,7 +32,7 @@
             <li class="nav-item mb-2">
                 <a href="{{ route('admin.invoices.index') }}"
                 class="nav-link {{ request()->routeIs('admin.invoices.index') ? 'active' : '' }}">
-                    <i class="bi bi-receipt me-2"></i> Invoices
+                    <i class="bi bi-receipt me-2"></i> Vouchers
                 </a>
             </li>
 

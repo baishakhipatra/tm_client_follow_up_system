@@ -73,22 +73,24 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {{-- @forelse($pendingInvoices as $invoice)
+                        @forelse($pendingInvoices as $invoice)
                             <tr>
-                                <td>#{{ $invoice->invoice_number ?? 'N/A' }}</td>
-                                <td>{{ \Carbon\Carbon::parse($invoice->due_date)->format('d M Y') }}</td>
-                                <td>₹{{ number_format($invoice->pending_amount, 2) }}</td>
+                                <td>#{{ $invoice->invoice_number }}</td>
+                                <td>{{ $invoice->created_at->format('d M Y') }}</td>
+                                <td>₹{{ number_format($invoice->required_payment_amount, 2) }}</td>
                                 <td>
-                                    <span class="badge bg-warning">Pending</span>
+                                    <span class="badge bg-warning">
+                                        {{ $invoice->status == 1 ? 'Partially Paid' : 'Pending' }}
+                                    </span>
                                 </td>
                             </tr>
-                        @empty
+                            @empty
                             <tr>
                                 <td colspan="4" class="text-center text-muted py-4">
                                     No pending invoices
                                 </td>
                             </tr>
-                        @endforelse --}}
+                        @endforelse
                     </tbody>
                 </table>
             </div>

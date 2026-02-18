@@ -70,19 +70,6 @@
                     </select>
                 </div>
 
-                <div class="col-md-3">
-                    <label class="form-label">Project</label>
-                    <select class="form-select"
-                        wire:model.live="filter_project">
-                        <option value="">All Projects</option>
-                        @foreach($projectsList as $project)
-                            <option value="{{ $project->id }}">
-                                {{ ucwords($project->project_name) }}
-                            </option>
-                        @endforeach
-                    </select>
-                </div>
-
                 <div class="col-md-12 d-flex justify-content-end">
                     <button 
                         type="button"
@@ -143,6 +130,14 @@
                                 <td>
                                     @if($payment->status != 1)
                                         <button
+                                            class="btn btn-sm btn-outline-warning"
+                                            wire:click="editVoucher({{ $payment->id }})"
+                                            title="Edit Voucher">
+                                            <i class="bi bi-pencil-square"></i>
+                                        </button>
+                                    @endif
+                                    @if($payment->status != 1)
+                                        <button
                                             class="btn btn-sm btn-outline-success"
                                             wire:click="openPayModal({{ $payment->id }})">
                                             <i class="bi bi-cash-coin"></i>
@@ -186,7 +181,6 @@
                             </div>
 
                             <div class="modal-body">
-
                                 {{-- Voucher Info --}}
                                 <div class="row mb-3">
                                     <div class="col-md-4">
@@ -236,7 +230,6 @@
                                         </tbody>
                                     </table>
                                 </div>
-
                             </div>
 
                             <div class="modal-footer">
@@ -376,7 +369,7 @@
                             <tbody>
                                 @foreach($clientInvoices as $invoice)
                                     <tr>
-                                        <td>{{ $invoice->invoice_number }}</td>
+                                        <td>{{ $invoice->invoice_number }} - {{ucwords(optional($invoice->project)->project_name)}}</td>
                                         <td>{{ number_format($invoice->required_payment_amount, 2) }}</td>
                                     </tr>
                                 @endforeach
@@ -404,8 +397,6 @@
             </div>
         </div>
     @endif
-
-
 </div>
 
 @push('scripts')

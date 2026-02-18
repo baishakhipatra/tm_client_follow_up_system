@@ -149,18 +149,6 @@
                                 $opening = $ledgers->opening_balance ?? 0; 
                             @endphp
 
-                            @if($projectId)
-                            <tr class="table-light fw-bold">
-                                <td colspan="5" class="text-end text-primary">
-                                    Opening Balance
-                                </td>
-                                <td class="text-end">
-                                    {{ number_format(abs($opening),2) }}
-                                    {{ $opening >= 0 ? 'Dr' : 'Cr' }}
-                                </td>
-                            </tr>
-                            @endif
-
                             @foreach($ledgers as $ledger)
                                 @php
                                     $totalDebit += $ledger->debit;

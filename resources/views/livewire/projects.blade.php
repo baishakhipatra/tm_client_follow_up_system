@@ -8,10 +8,17 @@
             <input
                 type="text"
                 class="form-control"
-                placeholder="Search projects"
+                placeholder="Search projects, clients, company..."
                 wire:model.live.debounce.500ms="search"
                 style="width: 280px;"
             >
+            @if($search)
+                <button
+                    wire:click="resetSearch"
+                    class="btn btn-outline-secondary">
+                    Reset
+                </button>
+            @endif
             <button
                 wire:click="openModal"
                 class="btn btn-primary d-flex align-items-center gap-2">
@@ -22,7 +29,6 @@
     </div>
     <div class="card shadow-sm border-0">
         <div class="card-body p-0">
-
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
@@ -32,7 +38,6 @@
                             <th>Project Cost</th>
                             <th>Tax Amount</th>
                             <th>Total Amount</th>
-                            <th>Invoiced</th>
                             <th>Received</th>
                             <th>Due</th>
                             <th>Duration</th>
@@ -48,29 +53,15 @@
                                     {{ ucwords(optional($project->client)->client_name ?? '-') }} <br>
                                     Company: {{ ucwords(optional($project->client)->company_name ?? '-') }}
                                 </td>
-                                {{-- @php
-                                    $totalPayable = $project->total_cost 
-                                        ?? ($project->project_cost + $project->gst_amount);
-
-                                    $received = $project->payment_received ?? 0;  
-                                    $invoiceTotal = $project->invoice_total ?? 0; 
-                                    $invoiced = $advance + $invoiceTotal;
-
-                                    $due = max(0, $totalPayable - $advance);
-                                @endphp --}}
                                 @php
-                                    $totalPayable = $project->total_cost 
-                                        ?? ($project->project_cost + $project->gst_amount);
-                                    $received = $project->payment_received ?? 0;
-                                    $invoiced = $project->invoice_total ?? 0;
-
+                                    $totalPayable = $project->total_cost;
+                                    $received = $project->received_amount ?? 0;
                                     $due = max(0, $totalPayable - $received);
                                 @endphp
 
                                 <td>{{ number_format($project->project_cost, 2) }}</td>
                                 <td>{{ number_format($project->gst_amount, 2) }}</td>
                                 <td>{{ number_format($totalPayable, 2) }}</td>
-                                <td>{{ number_format($invoiced, 2) }}</td>
                                 <td class="fw-bold text-success">{{ number_format($received, 2) }}</td>
                                 <td class="fw-bold text-danger">{{ number_format($due, 2) }}</td>
                                 <td>Start-date: {{ $project->start_date ?? '-' }} <br> End-date: {{ $project->end_date ?? '-' }}</td>
@@ -103,150 +94,158 @@
         </div>
     </div>
     @if($showModal)
-    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content border-0 shadow">
+        <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,.5)">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content border-0 shadow">
 
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        {{ $isEdit ? 'Edit Project' : 'Add New Project' }}
-                    </h5>
-                    <button type="button" class="btn-close" wire:click="closeModal"></button>
-                </div>
-
-                <div class="modal-body">
-                    <div class="row g-3">
-
-                        {{-- Project Name --}}
-                        <div class="col-md-6">
-                            <label class="form-label">Project Name <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control"
-                                wire:model.defer="project_name">
-                                @error('project_name')
-                                    <small class="text-danger">{{ $message }}</small>
-                                @enderror
-                        </div>
-
-                        {{-- Project Code --}}
-                        <div class="col-md-6">
-                            <label class="form-label">Project Code</label>
-                            <input type="text" class="form-control"
-                                wire:model.defer="project_code">
-                        </div>
-
-                        {{-- Client --}}
-                        <div class="col-md-6">
-                            <label class="form-label">Client <span class="text-danger">*</span></label>
-                            <select class="form-select" wire:model.defer="client_id">
-                                <option value="hidden">Select a client</option>
-                                @foreach($clientsList as $client)
-                                    <option value="{{ $client->id }}">
-                                        {{ucwords($client->company_name)}}({{ ucwords($client->client_name) }})
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-
-                        {{-- Total Cost --}}
-                        <div class="col-md-6">
-                            <label class="form-label">Total Project Cost <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control"
-                                wire:model="project_cost">
-                                @error('project_cost')
-                                    <small class="text-danger">{{ $message }}</small>
-                                @enderror
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">Tax Type</label>
-                            <div class="d-flex gap-3 mt-2">
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                        type="radio"
-                                        wire:model.live="is_taxable"
-                                        value="1"
-                                        id="taxable">
-                                    <label class="form-check-label" for="taxable">
-                                        Taxable (18% GST)
-                                    </label>
-                                </div>
-
-                                <div class="form-check">
-                                    <input class="form-check-input"
-                                        type="radio"
-                                        wire:model.live="is_taxable"
-                                        value="0"
-                                        id="nonTaxable">
-                                    <label class="form-check-label" for="nonTaxable">
-                                        Non-Taxable
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-
-                        @if($is_taxable)
-                            <div class="col-md-6">
-                                <label class="form-label">GST (18%)</label>
-                                <input type="text" class="form-control" readonly
-                                    value="₹ {{ number_format($gst_amount, 2) }}">
-                            </div>
-                        @endif
-
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold">Total Payable Amount</label>
-                            <input type="text" class="form-control fw-bold text-success"
-                                readonly
-                                value="₹ {{ number_format($total_cost, 2) }}">
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">Payment Received</label>
-                            <input type="number" step="0.01" class="form-control"
-                                wire:model.defer="payment_received">
-                            @error('payment_received') <span class="text-danger">{{ $message }}</span> @enderror
-                        </div>
-
-
-                        <div class="col-md-6">
-                            <label class="form-label">Payment Terms</label>
-                            <input type="text" class="form-control"
-                                placeholder="e.g. Net 30"
-                                wire:model.defer="payment_terms">
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">Start Date</label>
-                            <input type="date" class="form-control"
-                                wire:model.defer="start_date">
-                                @error('start_date')
-                                    <small class="text-danger">{{ $message }}</small>
-                                @enderror
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">End Date</label>
-                            <input type="date" class="form-control"
-                                wire:model.defer="end_date">
-                                @error('end_date')
-                                    <small class="text-danger">{{ $message }}</small>
-                                @enderror
-                        </div>
-
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            {{ $isEdit ? 'Edit Project' : 'Add New Project' }}
+                        </h5>
+                        <button type="button" class="btn-close" wire:click="closeModal"></button>
                     </div>
-                </div>
 
-                <div class="modal-footer">
-                    <button class="btn btn-outline-secondary" wire:click="closeModal">
-                        Cancel
-                    </button>
-                    <button class="btn btn-primary" wire:click="saveProject">
-                        {{ $isEdit ? 'Update Project' : 'Create Project' }}
-                    </button>
-                </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
 
+                            {{-- Project Name --}}
+                            <div class="col-md-6">
+                                <label class="form-label">Project Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control"
+                                    wire:model.defer="project_name">
+                                    @error('project_name')
+                                        <small class="text-danger">{{ $message }}</small>
+                                    @enderror
+                            </div>
+
+                            {{-- Project Code --}}
+                            <div class="col-md-6">
+                                <label class="form-label">Project Code</label>
+                                <input type="text" class="form-control"
+                                    wire:model.defer="project_code">
+                            </div>
+
+                            {{-- Client --}}
+                            <div class="col-md-6">
+                                <label class="form-label">Client <span class="text-danger">*</span></label>
+                                <select class="form-select" wire:model.defer="client_id">
+                                    <option value="hidden">Select a client</option>
+                                    @foreach($clientsList as $client)
+                                        <option value="{{ $client->id }}">
+                                            {{ucwords($client->company_name)}}({{ ucwords($client->client_name) }})
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            {{-- Total Cost --}}
+                            <div class="col-md-6">
+                                <label class="form-label">Total Project Cost <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control"
+                                    wire:model="project_cost">
+                                    @error('project_cost')
+                                        <small class="text-danger">{{ $message }}</small>
+                                    @enderror
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Tax Type</label>
+                                <div class="d-flex gap-3 mt-2">
+                                    <div class="form-check">
+                                        <input class="form-check-input"
+                                            type="radio"
+                                            wire:model.live="is_taxable"
+                                            value="1"
+                                            id="taxable">
+                                        <label class="form-check-label" for="taxable">
+                                            Taxable (18% GST)
+                                        </label>
+                                    </div>
+
+                                    <div class="form-check">
+                                        <input class="form-check-input"
+                                            type="radio"
+                                            wire:model.live="is_taxable"
+                                            value="0"
+                                            id="nonTaxable">
+                                        <label class="form-check-label" for="nonTaxable">
+                                            Non-Taxable
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            @if($is_taxable)
+                                <div class="col-md-6">
+                                    <label class="form-label">GST (18%)</label>
+                                    <input type="text" class="form-control" readonly
+                                        value="₹ {{ number_format($gst_amount, 2) }}">
+                                </div>
+                            @endif
+
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Total Payable Amount</label>
+                                <input type="text" class="form-control fw-bold text-success"
+                                    readonly
+                                    value="₹ {{ number_format($total_cost, 2) }}">
+                            </div>
+
+                            @if($isEdit)
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold">Total Payment Received</label>
+                                    <input type="text"
+                                        class="form-control"
+                                        readonly
+                                        value="₹ {{ number_format($totalPaymentReceived, 2) }}">
+                                </div>
+                            @else
+                                <div class="col-md-6">
+                                    <label class="form-label">Payment Received</label>
+                                    <input type="number" step="0.01" class="form-control"
+                                        wire:model.defer="payment_received">
+                                </div>
+                            @endif
+
+                            <div class="col-md-6">
+                                <label class="form-label">Payment Terms</label>
+                                <input type="text" class="form-control"
+                                    placeholder="e.g. Net 30"
+                                    wire:model.defer="payment_terms">
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">Start Date</label>
+                                <input type="date" class="form-control"
+                                    wire:model.defer="start_date">
+                                    @error('start_date')
+                                        <small class="text-danger">{{ $message }}</small>
+                                    @enderror
+                            </div>
+
+                            <div class="col-md-6">
+                                <label class="form-label">End Date</label>
+                                <input type="date" class="form-control"
+                                    wire:model.defer="end_date">
+                                    @error('end_date')
+                                        <small class="text-danger">{{ $message }}</small>
+                                    @enderror
+                            </div>
+
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button class="btn btn-outline-secondary" wire:click="closeModal">
+                            Cancel
+                        </button>
+                        <button class="btn btn-primary" wire:click="saveProject">
+                            {{ $isEdit ? 'Update Project' : 'Create Project' }}
+                        </button>
+                    </div>
+
+                </div>
             </div>
         </div>
-    </div>
     @endif
 </div>
 
