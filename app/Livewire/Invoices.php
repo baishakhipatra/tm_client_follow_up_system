@@ -193,6 +193,7 @@ class Invoices extends Component
         $this->payment_id = $paymentId;
 
         $payment = Payment::findOrFail($paymentId);
+        $this->voucherAmount = $payment->payment_amount; 
 
         $this->clientInvoices = Invoice::where('client_id', $payment->client_id)
             ->whereIn('status', [0,1])
